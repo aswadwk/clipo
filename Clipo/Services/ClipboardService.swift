@@ -6,10 +6,12 @@ import Defaults
 final class ClipboardService {
     private let monitor: ClipboardMonitor
     private let repository: ClipboardRepository
+    private let fileStorage: FileStorage
 
-    init(monitor: ClipboardMonitor, repository: ClipboardRepository) {
+    init(monitor: ClipboardMonitor, repository: ClipboardRepository, fileStorage: FileStorage) {
         self.monitor = monitor
         self.repository = repository
+        self.fileStorage = fileStorage
     }
 
     func start() {
@@ -33,7 +35,15 @@ final class ClipboardService {
             }
 
             let now = Date()
+            let id = UUID().uuidString
+
+            let imagePath = try capture.imageData.map { try fileStorage.storeImage($0, id: id) }
+            let sourceIconPath = try capture.sourceIcon.flatMap {
+                try fileStorage.cacheIcon($0, bundleIdentifier: capture.sourceBundleIdentifier)
+            }
+
             let item = ClipboardItem(
+                id: id,
                 content: capture.content,
                 preview: capture.preview,
                 type: capture.type,
@@ -41,7 +51,8 @@ final class ClipboardService {
                 updatedAt: now,
                 sourceAppName: capture.sourceAppName,
                 sourceBundleIdentifier: capture.sourceBundleIdentifier,
-                sourceIcon: capture.sourceIcon,
+                sourceIconPath: sourceIconPath,
+                imagePath: imagePath,
                 size: capture.size
             )
             try repository.insert(item)
@@ -67,7 +78,8 @@ final class ClipboardService {
 
         switch item.type {
         case .image:
-            if let data = Data(base64Encoded: item.content),
+            if let path = item.imagePath,
+               let data = fileStorage.imageData(forRelativePath: path),
                let image = NSImage(data: data) {
                 pasteboard.writeObjects([image])
             }

@@ -2,12 +2,17 @@ import AppKit
 
 /// Raw snapshot of what was on the pasteboard at one moment, before persistence.
 struct ClipboardCapture {
+    /// For text/URL/file items this is the literal value; for images it is the SHA-256
+    /// hex of the image bytes, used purely as a dedup key (`imageData` holds the pixels).
     var content: String
     var preview: String
     var type: ClipboardType
     var sourceAppName: String?
     var sourceBundleIdentifier: String?
+    /// Raw 32×32 source-app icon bytes; the service caches these to disk per bundle id.
     var sourceIcon: Data?
+    /// Raw image bytes for `.image` captures; the service offloads these to disk.
+    var imageData: Data? = nil
     var size: Int
 }
 
@@ -96,12 +101,13 @@ final class ClipboardMonitor {
         if let image = pasteboard.readObjects(forClasses: [NSImage.self], options: nil)?.first as? NSImage,
            let data = image.tiffRepresentation {
             return ClipboardCapture(
-                content: data.base64EncodedString(),
+                content: FileStorage.sha256Hex(data),
                 preview: "Image \(Int(image.size.width))×\(Int(image.size.height))",
                 type: .image,
                 sourceAppName: source.name,
                 sourceBundleIdentifier: source.bundleID,
                 sourceIcon: source.icon,
+                imageData: data,
                 size: data.count
             )
         }

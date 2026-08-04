@@ -4,6 +4,8 @@ import GRDB
 /// Owns the SQLite connection and schema migrations.
 final class DatabaseService {
     let dbQueue: DatabaseQueue
+    /// Shared Clipo directory in Application Support, holding the DB and the binary files.
+    let storageDirectory: URL
 
     init() throws {
         let fm = FileManager.default
@@ -15,6 +17,7 @@ final class DatabaseService {
         )
         let dir = appSupport.appendingPathComponent("Clipo", isDirectory: true)
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        storageDirectory = dir
 
         let dbURL = dir.appendingPathComponent("clipo.sqlite")
 
@@ -22,10 +25,10 @@ final class DatabaseService {
         config.foreignKeysEnabled = true
         dbQueue = try DatabaseQueue(path: dbURL.path, configuration: config)
 
-        try Self.migrator.migrate(dbQueue)
+        try Self.migrator(storageDirectory: dir).migrate(dbQueue)
     }
 
-    private static var migrator: DatabaseMigrator {
+    private static func migrator(storageDirectory: URL) -> DatabaseMigrator {
         var migrator = DatabaseMigrator()
 
         migrator.registerMigration("createClipboardItem") { db in
@@ -50,6 +53,70 @@ final class DatabaseService {
                 on: ClipboardItem.databaseTableName,
                 columns: ["created_at"]
             )
+        }
+
+        // Move image bytes and source icons out of the DB and into files on disk,
+        // replacing the base64 image `content` and the `source_icon` blob with paths.
+        migrator.registerMigration("offloadBinariesToFiles") { db in
+            try db.alter(table: ClipboardItem.databaseTableName) { t in
+                t.add(column: "image_path", .text)
+                t.add(column: "source_icon_path", .text)
+            }
+
+            let fm = FileManager.default
+            try fm.createDirectory(
+                at: storageDirectory.appendingPathComponent("images", isDirectory: true),
+                withIntermediateDirectories: true
+            )
+            try fm.createDirectory(
+                at: storageDirectory.appendingPathComponent("icons", isDirectory: true),
+                withIntermediateDirectories: true
+            )
+
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                SELECT id, type, content, source_icon, source_bundle_identifier
+                FROM clipboard_item
+                """
+            )
+            for row in rows {
+                let id: String = row["id"]
+                let type: String = row["type"]
+
+                if type == ClipboardType.image.rawValue,
+                   let base64: String = row["content"],
+                   let data = Data(base64Encoded: base64) {
+                    let relativePath = "images/\(id).tiff"
+                    try data.write(
+                        to: storageDirectory.appendingPathComponent(relativePath),
+                        options: .atomic
+                    )
+                    try db.execute(
+                        sql: "UPDATE clipboard_item SET image_path = ?, content = ? WHERE id = ?",
+                        arguments: [relativePath, FileStorage.sha256Hex(data), id]
+                    )
+                }
+
+                // Legacy icon blobs are only migratable when keyed by a bundle identifier,
+                // matching how new captures cache icons; iconless-key rows just drop the icon.
+                if let iconData: Data = row["source_icon"],
+                   let bundleID: String = row["source_bundle_identifier"], !bundleID.isEmpty {
+                    let relativePath = "icons/\(FileStorage.sanitizedKey(bundleID)).tiff"
+                    let fileURL = storageDirectory.appendingPathComponent(relativePath)
+                    if !fm.fileExists(atPath: fileURL.path) {
+                        try iconData.write(to: fileURL, options: .atomic)
+                    }
+                    try db.execute(
+                        sql: "UPDATE clipboard_item SET source_icon_path = ? WHERE id = ?",
+                        arguments: [relativePath, id]
+                    )
+                }
+            }
+
+            try db.alter(table: ClipboardItem.databaseTableName) { t in
+                t.drop(column: "source_icon")
+            }
         }
 
         return migrator
