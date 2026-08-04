@@ -4,6 +4,7 @@ import Foundation
 @MainActor
 final class AppContainer {
     let database: DatabaseService
+    let fileStorage: FileStorage
     let repository: ClipboardRepository
     let monitor: ClipboardMonitor
     let clipboardService: ClipboardService
@@ -13,12 +14,13 @@ final class AppContainer {
     init() {
         do {
             database = try DatabaseService()
+            fileStorage = try FileStorage(baseDirectory: database.storageDirectory)
         } catch {
-            fatalError("Clipo: could not open database: \(error)")
+            fatalError("Clipo: could not open storage: \(error)")
         }
-        repository = ClipboardRepository(database: database)
+        repository = ClipboardRepository(database: database, fileStorage: fileStorage)
         monitor = ClipboardMonitor()
-        clipboardService = ClipboardService(monitor: monitor, repository: repository)
+        clipboardService = ClipboardService(monitor: monitor, repository: repository, fileStorage: fileStorage)
         settingsService = SettingsService()
         hotkeyService = HotkeyService()
     }

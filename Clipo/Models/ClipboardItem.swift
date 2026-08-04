@@ -11,7 +11,10 @@ struct ClipboardItem: Identifiable, Codable, Equatable, Hashable, Sendable {
     var updatedAt: Date
     var sourceAppName: String?
     var sourceBundleIdentifier: String?
-    var sourceIcon: Data?
+    /// DB-relative path to the cached source-app icon on disk (see `FileStorage`), never a blob.
+    var sourceIconPath: String?
+    /// DB-relative path to the image file on disk for `.image` items (see `FileStorage`).
+    var imagePath: String?
     var usageCount: Int
     var isFavorite: Bool
     var isPinned: Bool
@@ -26,7 +29,8 @@ struct ClipboardItem: Identifiable, Codable, Equatable, Hashable, Sendable {
         updatedAt: Date,
         sourceAppName: String? = nil,
         sourceBundleIdentifier: String? = nil,
-        sourceIcon: Data? = nil,
+        sourceIconPath: String? = nil,
+        imagePath: String? = nil,
         usageCount: Int = 0,
         isFavorite: Bool = false,
         isPinned: Bool = false,
@@ -40,7 +44,8 @@ struct ClipboardItem: Identifiable, Codable, Equatable, Hashable, Sendable {
         self.updatedAt = updatedAt
         self.sourceAppName = sourceAppName
         self.sourceBundleIdentifier = sourceBundleIdentifier
-        self.sourceIcon = sourceIcon
+        self.sourceIconPath = sourceIconPath
+        self.imagePath = imagePath
         self.usageCount = usageCount
         self.isFavorite = isFavorite
         self.isPinned = isPinned
@@ -56,7 +61,8 @@ struct ClipboardItem: Identifiable, Codable, Equatable, Hashable, Sendable {
         case updatedAt = "updated_at"
         case sourceAppName = "source_app_name"
         case sourceBundleIdentifier = "source_bundle_identifier"
-        case sourceIcon = "source_icon"
+        case sourceIconPath = "source_icon_path"
+        case imagePath = "image_path"
         case usageCount = "usage_count"
         case isFavorite = "is_favorite"
         case isPinned = "is_pinned"
@@ -77,5 +83,6 @@ extension ClipboardItem: FetchableRecord, PersistableRecord {
         static let createdAt = Column(CodingKeys.createdAt)
         static let isFavorite = Column(CodingKeys.isFavorite)
         static let isPinned = Column(CodingKeys.isPinned)
+        static let imagePath = Column(CodingKeys.imagePath)
     }
 }
