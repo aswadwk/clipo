@@ -84,9 +84,23 @@ jobs:
             -derivedDataPath build build
 
       - name: Package
+        env:
+          TAG: ${{ needs.version.outputs.tag }}
         run: |
           APP="build/Build/Products/Release/Clipo.app"
-          ditto -c -k --sequesterRsrc --keepParent "$APP" "Clipo-${{ needs.version.outputs.tag }}.zip"
+
+          # Zip the .app (for auto-update tooling / smaller download).
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "Clipo-$TAG.zip"
+
+          # Build a drag-to-install DMG with an /Applications shortcut.
+          STAGE="build/dmg"
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE"
+          cp -R "$APP" "$STAGE/"
+          ln -s /Applications "$STAGE/Applications"
+          hdiutil create -volname "Clipo" -srcfolder "$STAGE" \
+            -ov -format UDZO "Clipo-$TAG.dmg"
+          rm -rf "$STAGE"
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
@@ -94,4 +108,6 @@ jobs:
           tag_name: ${{ needs.version.outputs.tag }}
           name: Clipo ${{ needs.version.outputs.tag }}
           generate_release_notes: true
-          files: Clipo-${{ needs.version.outputs.tag }}.zip
+          files: |
+            Clipo-${{ needs.version.outputs.tag }}.zip
+            Clipo-${{ needs.version.outputs.tag }}.dmg
